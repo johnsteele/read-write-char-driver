@@ -47,11 +47,22 @@ ssize_t device_read (struct file *filp, char __user *buf, size_t count,
 /* 
  * Write to the device.
  */ 
-ssize_t device_write (struct file *filp, char __user *buf, size_t count, 
+ssize_t device_write (struct file *filp, const char __user *buf, size_t count, 
 			loff_t *f_pos)
 {
 	return count;
 }
+
+
+/* 
+ * Operations that can be perfomed on 
+ * the device.
+ */
+struct file_operations fops = {
+	.owner = THIS_MODULE,
+	.read  = device_read,
+	.write = device_write,
+};
 
 
 /*
@@ -62,7 +73,7 @@ ssize_t device_write (struct file *filp, char __user *buf, size_t count,
  */
 static void setup_cdev (struct cdev *the_cdev, const int the_index)
 {
-	int result, i;
+	int result;
 	int device;
 	
 	device = MKDEV (my_major, my_minor + the_index);
@@ -72,7 +83,7 @@ static void setup_cdev (struct cdev *the_cdev, const int the_index)
 	result = cdev_add (the_cdev, device, 1);
 	
 	if (result) { 
-		prink (KERN_NOTICE "Unable to register (%s%d) device.\n",
+		printk (KERN_NOTICE "Unable to register (%s%d) device.\n",
 				driver_name, the_index); 
  	}
 }
@@ -86,7 +97,7 @@ static void  __exit device_cleanup (void)
 	int i;
 	if (my_devices) {
 		for (i = 0; i < num_devices; i++) {
-			cdev_del (&my_device[i]);	
+			cdev_del (&my_devices[i]);	
 		}	
 		kfree (my_devices);
 	}
@@ -137,8 +148,8 @@ static int __init device_init (void)
 
 
 module_init (device_init);
-module_exit (device_exit);
+module_exit (device_cleanup);
 
-MOUDLE_AUTHOR ("John Steele");
+MODULE_AUTHOR ("John Steele");
 MODULE_LICENSE ("DUAL BSD/GPL");
 
