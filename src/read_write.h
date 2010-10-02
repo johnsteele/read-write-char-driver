@@ -2,12 +2,12 @@
 #ifndef _READ_WRITE_H_
 #define _READ_WRITE_H_
 
-#ifndef _MY_MAJOR
-#define _MY_MAJOR 0
+#ifndef MY_MAJOR
+#define MY_MAJOR 0
 #endif
 
-#ifndef _MY_MINOR
-#define _MY_MINOR 0
+#ifndef MY_MINOR
+#define MY_MINOR 0
 #endif  
 
 #ifndef NUM_DEVICES
@@ -19,5 +19,5 @@ extern int my_minor;
 extern int num_devices; 
 
 
-#endif /* _READ_WRITE_H_
+#endif /* _READ_WRITE_H_ */
 
