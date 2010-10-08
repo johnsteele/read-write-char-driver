@@ -35,11 +35,41 @@ static char driver_name[] = "read_write_module";
 
 
 /*
+ * Open the device.
+ * 
+ * -Check for device specific errors 
+ *  (such as device-not-ready or similar hardware problems).
+ * - Initialize the device if it is being opened for the first time.
+ * - Update the f_ops pointer, if necessary.
+ * - Allocate and fill any data structure to be put in filp->private_data.
+ */
+int device_open (struct inode *inode, struct file *filp)
+{
+	// First thing is to identify which device is being opened.
+	
+}
+
+
+/*
+ * Release the device (Reverse of open).
+ * 
+ * - Deallocate anything that open allocated in filp->private_data.
+ * - Shut down device on last close.
+ */
+int device_release (struct inode *inode, struct file *filp)
+{
+
+}
+
+
+/*
  * Read from the device.
  */
 ssize_t device_read (struct file *filp, char __user *buf, size_t count, 
 			loff_t *f_pos)
 {
+	
+	
 	return count;
 }
 
@@ -50,6 +80,7 @@ ssize_t device_read (struct file *filp, char __user *buf, size_t count,
 ssize_t device_write (struct file *filp, const char __user *buf, size_t count, 
 			loff_t *f_pos)
 {
+	
 	return count;
 }
 
@@ -60,6 +91,8 @@ ssize_t device_write (struct file *filp, const char __user *buf, size_t count,
  */
 struct file_operations fops = {
 	.owner = THIS_MODULE,
+	.open  = device_open,
+	.release = device_release,
 	.read  = device_read,
 	.write = device_write,
 };
