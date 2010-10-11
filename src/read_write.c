@@ -68,7 +68,10 @@ int device_open (struct inode *inode, struct file *filp)
 	// Start reading and writing at beginning of circular buffer.
 	dev->read_ptr = dev->write_ptr = dev->buffer; 
 
-	// Count readers and writers of this device.
+	/*
+	 * Count readers and writers of this device.
+	 * I used f_mode, and not f_flags because it's cleaner (fs/open.c tells why). 
+	 */
 	if (filp->f_mode & FMODE_READ)
 		dev->num_readers++;
 	if (filp->f_mode & FMODE_WRITE)
@@ -87,6 +90,20 @@ int device_open (struct inode *inode, struct file *filp)
  */
 int device_release (struct inode *inode, struct file *filp)
 {
+	struct rw_dev *dev;
+	dev = filp->private_data;
+	
+	down(&dev->sem);
+	if (filp->f_mode & FMODE_READ)
+		dev->num_readers--;
+	if (filp->f_mode & FMODE_WRITE)
+		dev->num_writers--;	
+	
+	if ((dev->num_readers + dev->num_writers) == 0) {
+		kfree (dev->buffer);
+		dev->buffer = NULL; // The other fields are not checked on open. 
+	}
+	up (&dev->sem);
 	return 0;
 }
 
