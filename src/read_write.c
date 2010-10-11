@@ -9,6 +9,7 @@
 #include <linux/cdev.h>        /* cdev */
 #include <linux/moduleparam.h> /* cmd args */
 #include <asm/uaccess.h>       /* copy_*_user */
+#include <linux/semaphore.h>     /* Mutual exclusion semaphore. */
 
 #include "read_write.h"        /* definitions */
 
@@ -22,16 +23,10 @@ module_param (num_devices, int, S_IRUGO);
 
 
 /*
- * Dynacially allocated character devices.
+ * The devices.
  * See device_init() for initialization.
  */
-static struct cdev *my_devices;
-
-
-/*
- * Name of driver, also writen to /proc/devices.
- */
-static char driver_name[] = "read_write_module";
+static struct rw_dev *my_devices;
 
 
 /*
@@ -42,11 +37,15 @@ static char driver_name[] = "read_write_module";
  * - Initialize the device if it is being opened for the first time.
  * - Update the f_ops pointer, if necessary.
  * - Allocate and fill any data structure to be put in filp->private_data.
+ * 
+ * @inode The inode refers to the device node found on the file system.
+ * @filp  The file is a structure, created by the kernel, to hold the state
+ *   	  of our use of the device within the device driver.
  */
 int device_open (struct inode *inode, struct file *filp)
 {
 	// First thing is to identify which device is being opened.
-	
+	return 0;	
 }
 
 
@@ -58,7 +57,7 @@ int device_open (struct inode *inode, struct file *filp)
  */
 int device_release (struct inode *inode, struct file *filp)
 {
-
+	return 0;
 }
 
 
@@ -68,7 +67,14 @@ int device_release (struct inode *inode, struct file *filp)
 ssize_t device_read (struct file *filp, char __user *buf, size_t count, 
 			loff_t *f_pos)
 {
-	
+	/*
+ 	 * In the case of blocking operations, the following are the standard semantics:
+	 * 
+	 * If a process calls 'read' but no data is (yet) available, the process must
+	 * block. The process is awakened as soon as some data arrives, and that data
+	 * is returned to the caller, even if there is less than the ammount requested
+    	 * 'count'.
+ 	 */ 	
 	
 	return count;
 }
@@ -80,7 +86,17 @@ ssize_t device_read (struct file *filp, char __user *buf, size_t count,
 ssize_t device_write (struct file *filp, const char __user *buf, size_t count, 
 			loff_t *f_pos)
 {
-	
+	/* 
+	 *  In the case of blocking operations, the following are the standard semantics: 	
+	 * 
+	 * If a process calls write and there is no space in the buffer, the process
+	 * must block, and it must be on a different wait queue from the one used for 
+	 * reading. When some data has been written to the hardware device, and space
+	 * becomes fee in the output buffer, the process is awakened and the write
+	 * call succeeds, although the data may be only partially written if there
+	 * isn't room in the buffer for the 'count' bytes that were requested.
+	 */
+
 	return count;
 }
 
@@ -130,7 +146,7 @@ static void  __exit device_cleanup (void)
 	int i;
 	if (my_devices) {
 		for (i = 0; i < num_devices; i++) {
-			cdev_del (&my_devices[i]);	
+			cdev_del (&my_devices[i].cdev);	
 		}	
 		kfree (my_devices);
 	}
@@ -162,20 +178,21 @@ static int __init device_init (void)
 	} 	
 
 // ALLOCATE DEVICES
- 	my_devices = kmalloc (num_devices * sizeof (struct cdev), GFP_KERNEL);
+	my_devices = kmalloc (num_devices * sizeof (struct rw_dev), GFP_KERNEL);
 	if (!my_devices) {
 		result = -ENOMEM;
 		device_cleanup ();
 		return result;	
 	}	
 
-	memset (my_devices, 0, num_devices * sizeof (struct cdev));
+	memset (my_devices, 0, num_devices * sizeof (struct rw_dev));
 
 // SETUP DEVICES
 	for (i = 0; i < num_devices; i++) {
-		setup_cdev (&my_devices[i], i);	
-	}
-
+		// Initialize the semaphore.  
+		init_MUTEX (&my_devices[i].sem); 
+		setup_cdev (&my_devices[i].cdev, i);	
+	} 
 	return 0;
 }
 
