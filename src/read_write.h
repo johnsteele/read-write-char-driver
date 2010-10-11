@@ -14,6 +14,15 @@
 #define NUM_DEVICES 1
 #endif
 
+
+/*
+ * The rw device is a simple circular buffer. 
+ */
+#ifndef RW_BUFF_SIZE
+#define RW_BUFF_SIZE 4000
+#endif
+
+ 
 /*
  * Name of the driver, writen to /proc/devices.
  */

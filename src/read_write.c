@@ -16,10 +16,12 @@
 int my_major = MY_MAJOR;
 int my_minor = MY_MINOR;
 int num_devices = NUM_DEVICES;
+int rw_buff_size = RW_BUFF_SIZE;
 
 module_param (my_major, int, S_IRUGO);
 module_param (my_minor, int, S_IRUGO);
 module_param (num_devices, int, S_IRUGO);
+module_param (rw_buff_size, int, S_IRUGO);
 
 
 /*
@@ -45,7 +47,35 @@ static struct rw_dev *my_devices;
 int device_open (struct inode *inode, struct file *filp)
 {
 	// First thing is to identify which device is being opened.
-	return 0;	
+	struct rw_dev *dev; 
+	dev = container_of (inode->i_cdev, struct rw_dev, cdev); 
+	filp->private_data = dev; /* For other methods. */
+
+	if (down_interruptible (&dev->sem))
+		return -ERESTARTSYS;	
+
+	if (!dev->buffer) {
+		dev->buffer = kmalloc (rw_buff_size, GFP_KERNEL);
+		if (!dev->buffer) { // No memory. 
+			up(&dev->sem);
+			return -ENOMEM;
+		}	
+	}
+	
+	dev->buffer_size = rw_buff_size;
+	dev->end = dev->buffer + dev->buffer_size;
+	
+	// Start reading and writing at beginning of circular buffer.
+	dev->read_ptr = dev->write_ptr = dev->buffer; 
+
+	// Count readers and writers of this device.
+	if (filp->f_mode & FMODE_READ)
+		dev->num_readers++;
+	if (filp->f_mode & FMODE_WRITE)
+		dev->num_writers++;
+
+	up (&dev->sem);
+	return nonseekable_open(inode, filp);	
 }
 
 
