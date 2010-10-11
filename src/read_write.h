@@ -43,7 +43,7 @@ struct rw_dev {
 	char *read_ptr, *write_ptr;   	     /* Where to read and write from. */
 	int num_readers, num_writers;	     /* Number of openings for r/w.   */
 	struct semaphore sem;                /* Mutual exclusion semaphore    */
-	struct cdev cdev;                /* Char device structure.        */
+	struct cdev cdev;                    /* Char device structure.        */
 
 };
 

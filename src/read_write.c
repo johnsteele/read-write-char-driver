@@ -9,7 +9,8 @@
 #include <linux/cdev.h>        /* cdev */
 #include <linux/moduleparam.h> /* cmd args */
 #include <asm/uaccess.h>       /* copy_*_user */
-#include <linux/semaphore.h>     /* Mutual exclusion semaphore. */
+#include <linux/semaphore.h>   /* Mutual exclusion semaphore. */
+/*#include <linux/fcntl.h>     O_NONBLOCK, but fs.h already includes fcntl.h*/
 
 #include "read_write.h"        /* definitions */
 
@@ -46,9 +47,11 @@ static struct rw_dev *my_devices;
  */
 int device_open (struct inode *inode, struct file *filp)
 {
-	// First thing is to identify which device is being opened.
+	/* First thing is to identify which device is being opened. */
 	struct rw_dev *dev; 
 	dev = container_of (inode->i_cdev, struct rw_dev, cdev); 
+	printk (KERN_NOTICE "Inside device_open(...);\n");
+
 	filp->private_data = dev; /* For other methods. */
 
 	if (down_interruptible (&dev->sem))
@@ -56,7 +59,7 @@ int device_open (struct inode *inode, struct file *filp)
 
 	if (!dev->buffer) {
 		dev->buffer = kmalloc (rw_buff_size, GFP_KERNEL);
-		if (!dev->buffer) { // No memory. 
+		if (!dev->buffer) { 
 			up(&dev->sem);
 			return -ENOMEM;
 		}	
@@ -65,7 +68,7 @@ int device_open (struct inode *inode, struct file *filp)
 	dev->buffer_size = rw_buff_size;
 	dev->end = dev->buffer + dev->buffer_size;
 	
-	// Start reading and writing at beginning of circular buffer.
+	/* Start reading and writing at beginning of circular buffer. */
 	dev->read_ptr = dev->write_ptr = dev->buffer; 
 
 	/*
@@ -101,7 +104,7 @@ int device_release (struct inode *inode, struct file *filp)
 	
 	if ((dev->num_readers + dev->num_writers) == 0) {
 		kfree (dev->buffer);
-		dev->buffer = NULL; // The other fields are not checked on open. 
+		dev->buffer = NULL; /* The other fields are not checked on open. */ 
 	}
 	up (&dev->sem);
 	return 0;
@@ -110,6 +113,11 @@ int device_release (struct inode *inode, struct file *filp)
 
 /*
  * Read from the device.
+ * 
+ * Does its waiting using wait_event.
+ * device_write on the other hand does its waiting with prepare_to_wait and finish_wait.
+ * Normally you don't mix methods w/in a single driver, I did it to show both ways of
+ * handling sleeps.
  */
 ssize_t device_read (struct file *filp, char __user *buf, size_t count, 
 			loff_t *f_pos)
@@ -122,13 +130,59 @@ ssize_t device_read (struct file *filp, char __user *buf, size_t count,
 	 * is returned to the caller, even if there is less than the ammount requested
     	 * 'count'.
  	 */ 	
+	struct rw_dev *dev;
+	dev = filp->private_data;
 	
+	if (down_interruptible (&dev->sem))
+		return -ERESTARTSYS;
+	
+	while (dev->read_ptr == dev->write_ptr) { /* Nothing to read. */
+		up (&dev->sem);
+		
+		if (filp->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+
+		printk ("%s reading: going to sleep.\n", current->comm);
+		
+		if (wait_event_interruptible (dev->input_q, (dev->read_ptr != dev->write_ptr)))
+			return -ERESTARTSYS; /* signal: tell the fs layer to handle it. */
+		
+		/* Otherwise loop, but first reaquire the lock. */
+		if (down_interruptible (&dev->sem))
+			return -ERESTARTSYS;
+	}
+
+	/* Okay, data is there, now return something. */
+	if (dev->write_ptr > dev->read_ptr)
+		count = min (count, (size_t) (dev->write_ptr - dev->read_ptr));
+	else /* the write pointer has wrapped, return data up to dev->end. */	
+		count = min (count, (size_t) (dev->end - dev->read_ptr));
+			
+	if (copy_to_user (buf /*To*/, dev->read_ptr /*From*/, count)) {
+		up (&dev->sem);
+		return -EFAULT;	
+	}
+	
+	dev->read_ptr += count;
+	if (dev->read_ptr == dev->end)
+		dev->read_ptr = dev->buffer; /*wrapped*/
+	
+	up (&dev->sem);
+	
+	/* finally, awake any writers and return. */
+	wake_up_interruptible (&dev->output_q);
+	printk (KERN_NOTICE "%s ended up reading %li bytes.\n", current->comm, (long)count);
 	return count;
 }
 
 
 /* 
  * Write to the device.
+ * 
+ * In device_read, it did its waiting with wait_event.
+ * In device_write, instead we do our waiting using prepare_to_wait and finish_wait.
+ * Noramlly you don't mix methods of sleeping in a single driver.
+ * It serves as an example of both ways of handling sleep. 
  */ 
 ssize_t device_write (struct file *filp, const char __user *buf, size_t count, 
 			loff_t *f_pos)
